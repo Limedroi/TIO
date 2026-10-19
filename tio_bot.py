@@ -64,7 +64,7 @@ if not BOT_TOKEN:
 
 ADMIN_GROUP_ID = int(os.environ.get("ADMIN_GROUP_ID", "-5370857010"))
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1004439548910"))
-BACKUP_GROUP_ID = int(os.environ.get("BACKUP_GROUP_ID", "-5044416482"))
+BACKUP_GROUP_ID = int(os.environ.get("BACKUP_GROUP_ID", "-1004295912856"))
 # Debounce: wait this long after the FIRST unsaved change, then send ONE backup
 # containing everything changed meanwhile. Nothing is sent if nothing changed.
 BACKUP_DELAY = int(os.environ.get("BACKUP_DELAY", "300"))  # 5 minutes
@@ -119,7 +119,7 @@ TXT_WELCOME = (
     "🔒 *مجهول تمامًا* هو الاختيار الافتراضي. "
     "البيانات دي مش بتظهر لباقي المستخدمين إلا لو اخترت إظهارها."
 )
-TXT_ASK_GENDER = "تحب يظهر إيه في بياناتك العامة؟ اختار النوع:"
+TXT_ASK_GENDER = "تحب يظهر إيه في بياناتك العامة؟:"
 TXT_ASK_CLASS = "إنت في أنهي دفعة؟"
 TXT_ASK_GROUP = "إنت في أنهي جروب؟"
 TXT_ASK_REPLIES = (
@@ -155,7 +155,7 @@ TXT_HELP = (
     "الرسائل والرد الأول بتخضع للمراجعة. Tio مش خدمة طوارئ أو بديل عن المساعدة المتخصصة."
 )
 TXT_REPORT_SENT = "🚩 البلاغ اتبعت للمراجعة. شكرًا إنك ساعدت في الحفاظ على مساحة آمنة."
-TXT_REPORT_DUPLICATE = "البلاغ ده موجود بالفعل عند الإدارة للمراجعة."
+TXT_REPORT_DUPLICATE = "البلاغ ده موجود بالفعل عند الأدمنز للمراجعة."
 TXT_CONV_CLOSED = "المحادثة دي اتقفلت ومش هتقدر تبعت فيها رسائل جديدة."
 
 TXT_CONF_APPROVED_PUBLISHED = "✅ رسالتك T{cid} اتوافق عليها واتنشرت."
