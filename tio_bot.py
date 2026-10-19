@@ -1201,6 +1201,30 @@ async def create_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE, target_t
     await update.effective_message.reply_text(TXT_REPORT_SENT)
 
 
+async def user_report_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle a user's report button and create the report/transcript for admins."""
+    q = update.callback_query
+    if not q:
+        return
+    # Reports are only accepted from private chats to avoid exposing report actions.
+    if not q.message or q.message.chat.type != ChatType.PRIVATE:
+        await q.answer("استخدم زر الإبلاغ من المحادثة الخاصة مع Tio.", show_alert=True)
+        return
+    try:
+        action, raw_id = q.data.split(":", 1)
+        target_id = int(raw_id)
+    except (ValueError, AttributeError):
+        await q.answer("البلاغ ده مش صالح.", show_alert=True)
+        return
+    if action not in ("reportmsg", "reportconv"):
+        await q.answer("البلاغ ده مش صالح.", show_alert=True)
+        return
+    await q.answer("جاري إرسال البلاغ للإدارة…")
+    await create_report(
+        update, ctx, "message" if action == "reportmsg" else "conversation", target_id
+    )
+
+
 async def is_admin_user(bot, uid: int) -> bool:
     if ADMIN_IDS:
         return uid in ADMIN_IDS
