@@ -45,6 +45,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    ExtBot,
     MessageHandler,
     filters,
 )
@@ -64,7 +65,10 @@ if not BOT_TOKEN:
 ADMIN_GROUP_ID = int(os.environ.get("ADMIN_GROUP_ID", "-5370857010"))
 CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "-1004439548910"))
 BACKUP_GROUP_ID = int(os.environ.get("BACKUP_GROUP_ID", "-5044416482"))
-BACKUP_DELAY = int(os.environ.get("BACKUP_DELAY", "60"))
+# Debounce: wait this long after the FIRST unsaved change, then send ONE backup
+# containing everything changed meanwhile. Nothing is sent if nothing changed.
+BACKUP_DELAY = int(os.environ.get("BACKUP_DELAY", "300"))  # 5 minutes
+BACKUP_RETRY_DELAY = 60  # after a failed send, retry after this many seconds
 CONFESSION_COOLDOWN_SECONDS = int(os.environ.get("CONFESSION_COOLDOWN_SECONDS", "1800"))
 FLOOD_WINDOW_SECONDS = int(os.environ.get("FLOOD_WINDOW_SECONDS", "600"))
 FLOOD_MAX_SUBMISSIONS = int(os.environ.get("FLOOD_MAX_SUBMISSIONS", "5"))
@@ -105,79 +109,70 @@ BTN_REJECT = "❌ رفض"
 
 HOME_WRITE = "✍️ فضفض"
 HOME_MYTALK = "💌 MyTalk"
-HOME_PRIVACY = "🔒 الخصوصية"
+HOME_REPLY = "💬 Reply"
 HOME_HELP = "❔ مساعدة"
 
 TXT_WELCOME = (
     "أهلاً بيك في *Tio — Talk It Out!* 👋\n"
     "مكان تقدر تفضفض فيه براحتك.\n\n"
-    "أولًا، تحب بيانات إيه تظهر مع اعترافك؟\n"
-    "🔒 *مجهول تمامًا* هو الاختيار الافتراضي والأكثر خصوصية. "
+    "أولًا، تحب بيانات إيه تظهر مع رسالتك؟\n"
+    "🔒 *مجهول تمامًا* هو الاختيار الافتراضي. "
     "البيانات دي مش بتظهر لباقي المستخدمين إلا لو اخترت إظهارها."
 )
 TXT_ASK_GENDER = "تحب يظهر إيه في بياناتك العامة؟ اختار النوع:"
 TXT_ASK_CLASS = "إنت في أنهي دفعة؟"
 TXT_ASK_GROUP = "إنت في أنهي جروب؟"
 TXT_ASK_REPLIES = (
-    "تحب تسمح بالردود الخاصة على اعترافاتك؟\n"
+    "تحب تسمح بالردود البرايفت على كلامك؟\n"
     "الردود بتوصلك من خلال البوت، ومش بتكشف هويتك للطرف التاني."
 )
 TXT_SETUP_DONE = "🎉 كده تمام! استخدم الأزرار تحت عشان تفضفض أو تتابع محادثاتك."
-TXT_HOME = "أهلاً بيك في *Tio — Talk It Out!* 👋\nفضفض براحتك. إحنا سامعينك."
+TXT_HOME = "أهلاً بيك في *Tio — Talk It Out!* 👋\nفضفض براحتك. وهنوصل صوتك."
 TXT_NEED_START = "اضغط /start الأول عشان تظبط إعداداتك."
-TXT_CONFESSION_RECEIVED = "✅ اعترافك اتسجل برقم *T{cid}* وبيستنى المراجعة. تقدر تتابع حالته من MyTalk."
+TXT_CONFESSION_RECEIVED = "✅ رسالتك اتسجلت برقم *T{cid}* وبتستنى المراجعة. تقدر تتابع حالتها من MyTalk."
 TXT_ASK_REPLY_TEXT = "✍️ ابعت ردك على T{cid} دلوقتي (أو /cancel)."
-TXT_CONFESSION_NOT_FOUND = "❌ الاعتراف T{cid} مش موجود أو لسه مش منشور."
-TXT_REPLIES_DISABLED = "🚫 صاحب T{cid} مش سامح بالردود الخاصة."
-TXT_OWN_CONFESSION = "مينفعش ترد على اعترافك إنت 🙂"
+TXT_CONFESSION_NOT_FOUND = "❌ الرسالة T{cid} مش موجودة أو لسه مش منشورة."
+TXT_REPLIES_DISABLED = "🚫 صاحب T{cid} مش سامح بالردود البرايفت."
+TXT_OWN_CONFESSION = "مينفعش ترد على رسالتك إنت يا ناصح🙂"
 TXT_REPLY_SENT_FOR_REVIEW = "✅ ردك على T{cid} اتبعت للمراجعة. لو اتوافق عليه، هتبدأ محادثة مجهولة تقدروا تكملوا فيها."
 TXT_CONVERSATION_DELIVERED = "✅ رسالتك المجهولة اتبعتت للطرف التاني. تقدروا تكملوا الكلام من MyTalk."
 TXT_CONVERSATION_DELIVERY_FAILED = "⚠️ مقدرتش أوصل الرسالة للطرف التاني دلوقتي. جرّب تبعتها تاني من MyTalk."
 TXT_CANCELLED = "اتلغى."
-TXT_ASK_REPLY_NUMBER = "🔢 ابعت رقم الاعتراف اللي عايز ترد عليه (مثلاً T5 أو 5)."
-TXT_BAD_NUMBER = "❌ الرقم مش مظبوط. ابعت رقم الاعتراف (مثلاً T5 أو 5) أو /cancel."
+TXT_ASK_REPLY_NUMBER = "🔢 ابعت رقم الرسالة اللي عايز ترد عليها (مثلاً T5 أو 5)."
+TXT_BAD_NUMBER = "❌ الرقم مش مظبوط. ابعت رقم الرسالة (مثلاً T5 أو 5) أو /cancel."
 TXT_TOO_LONG = "❌ الرسالة طويلة قوي. الحد الأقصى {max} حرف."
 TXT_SUSPENDED = "🚫 مش هتقدر تبعت رسائل جديدة حاليًا. انتهاء الإيقاف: {until}. لو شايف إن ده خطأ، تواصل مع إدارة البوت."
-TXT_COOLDOWN = "⏳ تقدر تبعت اعتراف جديد بعد {minutes} دقيقة تقريبًا. تقدر في الوقت ده تتابع MyTalk أو ترد على محادثاتك."
+TXT_COOLDOWN = "⏳ تقدر تبعت رسالة جديدة بعد {minutes} دقيقة تقريبًا. تقدر في الوقت ده تتابع MyTalk أو ترد على محادثاتك."
 TXT_FLOOD = "⏳ الرسائل كتير بسرعة. استنى شوية وجرب تاني."
 TXT_DUPLICATE = "⚠️ الرسالة دي شبه رسالة بعتها قريب. عدّلها أو استنى شوية قبل إعادة إرسالها."
-TXT_PRIVACY = (
-    "🔒 *إعدادات الخصوصية*\n\n"
-    "طريقة عرض الهوية: *{identity}*\n"
-    "الردود الخاصة على اعترافاتك: *{replies}*\n\n"
-    "المجهول هنا معناه إن المستخدمين التانيين مش هيشوفوا بياناتك. "
-    "إدارة البوت تقدر تقنيًا تربط الرسائل بحساب تيليجرام لمعالجة البلاغات والإساءة. "
-    "ما تبعتش بيانات حساسة أو معلومات تكشف هويتك."
-)
 TXT_HELP = (
     "*Tio — مساعدة سريعة*\n\n"
-    "✍️ فضفض: ابعت اعتراف جديد للمراجعة.\n"
-    "💌 MyTalk: شوف اعترافاتك المنشورة أو اللي لسه تحت المراجعة، ومحادثاتك المجهولة.\n"
-    "/reply T5 — ابعت رد مجهول على اعتراف منشور.\n"
+    "✍️ فضفض: ابعت رسالة جديدة.\n"
+    "💌 MyTalk: شوف رسائلك المنشورة أو اللي لسه تحت المراجعة، ومحادثاتك المجهولة.\n"
+    "للرد المجهول على رسالة منشورة: /reply T5\n"
     "المحادثة الخاصة بعد بداية التواصل مش بتخضع لمراجعة مسبقة؛ لو حصل بلاغ، الإدارة هتراجع سجل المحادثة.\n"
-    "/settings — غيّر الخصوصية والسماح بالردود.\n"
-    "/cancel — ألغِ كتابة رد أو رسالة.\n\n"
-    "الاعترافات والرد الأول بتخضع للمراجعة. Tio مش خدمة طوارئ أو بديل عن المساعدة المتخصصة."
+    "لإلغاء كتابة رد أو رسالة: /cancel\n\n"
+    "الرسائل والرد الأول بتخضع للمراجعة. Tio مش خدمة طوارئ أو بديل عن المساعدة المتخصصة."
 )
 TXT_REPORT_SENT = "🚩 البلاغ اتبعت للمراجعة. شكرًا إنك ساعدت في الحفاظ على مساحة آمنة."
 TXT_REPORT_DUPLICATE = "البلاغ ده موجود بالفعل عند الإدارة للمراجعة."
 TXT_CONV_CLOSED = "المحادثة دي اتقفلت ومش هتقدر تبعت فيها رسائل جديدة."
 
-TXT_CONF_APPROVED_PUBLISHED = "✅ اعترافك T{cid} اتوافق عليه واتنشر."
+TXT_CONF_APPROVED_PUBLISHED = "✅ رسالتك T{cid} اتوافق عليها واتنشرت."
 TXT_CONF_REJECTED = None
 TXT_REPLY_DELIVERED_TO_SENDER = "✅ ردك على T{cid} اتوافق عليه، وبدأت محادثة مجهولة. تقدر تكمل من MyTalk."
 TXT_REPLY_REJECTED_TO_SENDER = None
 
 TXT_ADMIN_NEW_CONFESSION = (
-    "📩 <b>اعتراف جديد T{cid}</b>\n"
+    "📩 <b>رسالة جديدة T{cid}</b>\n"
     "<i>{label} • الردود {replies} • UID <code>{uid}</code></i>\n\n{text}"
 )
 TXT_REPLIES_ON = "شغالة"
 TXT_REPLIES_OFF = "مقفولة"
 TXT_ADMIN_NEW_REPLY = (
-    "💬 <b>رد R{rid} ← T{cid}</b>\n"
+    "💬 <b>رد R{rid} → T{cid}</b>\n"
     "<i>من: {label} • UID <code>{uid}</code></i>\n\n"
-    "<b>الاعتراف الأصلي:</b> {original}\n\n"
+    "<b>الرسالة الأصلية:</b> {original}\n\n"
     "<b>الرد:</b> {text}"
 )
 TXT_ADMIN_NEW_CONV_MESSAGE = (
@@ -190,22 +185,19 @@ TXT_VERDICT_LINE = "<b>{verdict}</b> بواسطة {admin}"
 TXT_NOT_ADMIN_GROUP = "مش مسموحلك."
 TXT_ALREADY_HANDLED = "اتعالج قبل كده."
 TXT_OK_TOAST = "تمام"
-TXT_CHANNEL_FAIL_WARNING = "⚠️ معرفتش أنشر T{cid}. الاعتراف لسه في انتظار المراجعة؛ جرّب الموافقة تاني بعد حل المشكلة."
+TXT_CHANNEL_FAIL_WARNING = "⚠️ معرفتش أنشر T{cid}. الرسالة لسه في انتظار المراجعة؛ جرّب الموافقة تاني بعد حل المشكلة."
 
 TXT_CHANNEL_POST = "<b>T{cid}</b>\n<i>{label}</i>\n\n{text}"
 TXT_CHANNEL_REPLY_HINT = "\n\nلو عايز ترد عليه بشكل مجهول استخدم /reply <code>T{cid}</code>"
 TXT_CHANNEL_FOOTER = (
-    "\n\n<blockquote>البوت: @TIO44_bot</blockquote>"
-    "\n<blockquote>القناة: https://t.me/TalkItOut_Channel</blockquote>"
-)
+    "\n\n<blockquote>البوت: @TIO44_bot</blockquote>")
 LABEL_FORMAT = "{gender} • دفعة {cls} • {grp}"
 LABEL_HIDDEN_GROUP = "الجروب مخفي"
 
 COMMANDS = [
     ("start", "ابدأ أو افتح القائمة الرئيسية"),
-    ("mytalk", "اعترافاتك ومحادثاتك"),
-    ("reply", "رد على اعتراف منشور"),
-    ("settings", "إعدادات الخصوصية"),
+    ("mytalk", "رسائلك ومحادثاتك"),
+    ("reply", "رد على رسالة منشورة"),
     ("help", "مساعدة"),
     ("cancel", "إلغاء العملية الحالية"),
 ]
@@ -225,10 +217,66 @@ state: dict[str, Any] = {
     "next_conversation_message": 1,
     "next_report": 1,
 }
-meta: dict[str, Any] = {"dirty_since": None, "last_backup_msg": None, "lock": None}
+meta: dict[str, Any] = {"dirty_since": None, "last_backup_msg": None, "lock": None,
+                        "pin_pending": None, "pin_retry_at": 0.0}
 
 PREFERENCE_KEYS = ("gender", "class", "grp", "allow_replies", "identity_mode")
 BASE_USER_KEYS = ("user_id", "last_confession_at", "submission_events", "suspended_until", "suspend_reason")
+
+
+# ---------------------------------------------------------------------------
+# Arabic / English (right-to-left vs left-to-right) display fix
+RLM, LRM = "\u200f", "\u200e"   # invisible direction marks
+_BIDI_CHARS = "\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+_BIDI_STRIP = str.maketrans("", "", _BIDI_CHARS)
+_ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]")
+_URL_SPLIT_RE = re.compile(r"(https?://\S+)")
+_LATIN_PUNCT_RE = re.compile(r"(?<=[A-Za-z0-9])([!?]+)")   # "Out!"  -> keeps "!" next to the word
+_NEGATIVE_NUM_RE = re.compile(r"(?<![\w\u200e])-(?=\d)")    # "-100123" -> keeps the minus sign
+
+
+def strip_bidi(text: str) -> str:
+    return text.translate(_BIDI_STRIP)
+
+
+def fix_bidi(text):
+    """Make mixed Arabic/English text display correctly.
+    Every line containing Arabic starts as right-to-left (so lines that begin with
+    T5, MyTalk, C12... don't flip), and punctuation / minus signs stay glued to
+    their Latin words and numbers. Safe to run twice; links and /commands are untouched."""
+    if not text or not _ARABIC_RE.search(text):
+        return text
+    out = []
+    for line in strip_bidi(text).split("\n"):
+        if _ARABIC_RE.search(line):
+            parts = _URL_SPLIT_RE.split(line)
+            for i in range(0, len(parts), 2):          # even parts = not URLs
+                parts[i] = _LATIN_PUNCT_RE.sub(lambda m: m.group(1) + LRM, parts[i])
+                parts[i] = _NEGATIVE_NUM_RE.sub(LRM + "-", parts[i])
+            line = "".join(parts)
+            if not line.lstrip().startswith(("/", "<blockquote")):
+                line = RLM + line
+        out.append(line)
+    return "\n".join(out)
+
+
+class RTLBot(ExtBot):
+    """Bot that applies fix_bidi to every outgoing text, caption and popup."""
+
+    async def send_message(self, chat_id, text, *args, **kwargs):
+        return await super().send_message(chat_id, fix_bidi(text), *args, **kwargs)
+
+    async def edit_message_text(self, text, *args, **kwargs):
+        return await super().edit_message_text(fix_bidi(text), *args, **kwargs)
+
+    async def send_document(self, *args, **kwargs):
+        if kwargs.get("caption"):
+            kwargs["caption"] = fix_bidi(kwargs["caption"])
+        return await super().send_document(*args, **kwargs)
+
+    async def answer_callback_query(self, callback_query_id, text=None, *args, **kwargs):
+        return await super().answer_callback_query(
+            callback_query_id, fix_bidi(text) if text else text, *args, **kwargs)
 
 
 def mark_dirty() -> None:
@@ -299,6 +347,28 @@ def persisted_state_and_settings() -> tuple[dict[str, Any], dict[str, Any]]:
     return base, settings
 
 
+async def pin_backup(bot, message_id: int) -> bool:
+    """Pin a backup message, then delete the previously pinned backup.
+    If pinning fails the backup is NOT re-sent; only the pin is retried (every 30s)."""
+    try:
+        await bot.pin_chat_message(BACKUP_GROUP_ID, message_id, disable_notification=True)
+    except TelegramError as e:
+        meta["pin_pending"] = message_id
+        meta["pin_retry_at"] = time.monotonic() + 30
+        log.error("Could not pin the backup - make the bot an admin with 'Pin messages' "
+                  "in the backup group. Retrying in 30s: %s", e)
+        return False
+    meta["pin_pending"] = None
+    old = meta["last_backup_msg"]
+    meta["last_backup_msg"] = message_id
+    if old and old != message_id:
+        try:
+            await bot.delete_message(BACKUP_GROUP_ID, old)
+        except TelegramError as e:
+            log.warning("Couldn't delete old backup: %s", e)
+    return True
+
+
 async def flush_backup(bot) -> None:
     async with meta["lock"]:
         if meta["dirty_since"] is None:
@@ -321,29 +391,37 @@ async def flush_backup(bot) -> None:
             msg = await bot.send_document(
                 BACKUP_GROUP_ID, document=InputFile(buf, filename=filename),
                 caption=(f"🗂 نسخة احتياطية\n👥 مستخدمين: {counts['users']}\n"
-                         f"📩 اعترافات: {counts['confessions']}\n💬 ردود: {counts['replies']}\n"
+                         f"📩 رسائل: {counts['confessions']}\n💬 ردود: {counts['replies']}\n"
                          f"🗨️ محادثات: {counts['conversations']}"),
                 disable_notification=True,
             )
-            await bot.pin_chat_message(BACKUP_GROUP_ID, msg.message_id, disable_notification=True)
         except RetryAfter as e:
             meta["dirty_since"] = time.monotonic() - BACKUP_DELAY + e.retry_after + 1
             raise
         except Exception:
-            meta["dirty_since"] = time.monotonic()
+            # Failed: keep the changes marked unsaved and retry soon (not after a full 5 min).
+            meta["dirty_since"] = time.monotonic() - BACKUP_DELAY + min(BACKUP_RETRY_DELAY, BACKUP_DELAY)
             raise
-        old = meta["last_backup_msg"]
-        meta["last_backup_msg"] = msg.message_id
-        if old and old != msg.message_id:
+        # The backup now exists in the group, so it is never sent twice; pin it right away.
+        stale = meta["pin_pending"]          # an earlier backup that never got pinned
+        if await pin_backup(bot, msg.message_id) and stale and stale != msg.message_id:
             try:
-                await bot.delete_message(BACKUP_GROUP_ID, old)
-            except TelegramError as e:
-                log.warning("Couldn't delete old backup: %s", e)
+                await bot.delete_message(BACKUP_GROUP_ID, stale)
+            except TelegramError:
+                pass
 
 
 async def backup_loop(bot) -> None:
     while True:
         await asyncio.sleep(1)
+        pending = meta["pin_pending"]
+        if pending and time.monotonic() >= meta["pin_retry_at"]:
+            try:
+                async with meta["lock"]:
+                    if meta["pin_pending"] == pending:
+                        await pin_backup(bot, pending)
+            except Exception as e:
+                log.error("Pin retry failed: %s", e)
         since = meta["dirty_since"]
         if since is None or time.monotonic() - since < BACKUP_DELAY:
             continue
@@ -412,7 +490,7 @@ def kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 def home_markup() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [[KeyboardButton(HOME_WRITE), KeyboardButton(HOME_MYTALK)],
-         [KeyboardButton(HOME_PRIVACY), KeyboardButton(HOME_HELP)]],
+         [KeyboardButton(HOME_REPLY), KeyboardButton(HOME_HELP)]],
         resize_keyboard=True, is_persistent=True,
     )
 
@@ -487,7 +565,7 @@ async def safe_send(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str | No
 
 
 def identity_keyboard():
-    return kb([[("🔒 مجهول تمامًا (أنسب للخصوصية)", "im:anonymous")],
+    return kb([[("🔒 مجهول تمامًا", "im:anonymous")],
                [("🏷️ إظهار بيانات عامة", "im:label")]])
 
 
@@ -523,18 +601,16 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat.type != ChatType.PRIVATE:
         return
     u = touch_user(update.effective_user)
-    # /start no longer resets preferences or profile fields.
+    # Every /start restarts the whole setup: identity, gender, class, group, replies.
+    for key in ("gender", "class", "grp", "allow_replies", "identity_mode"):
+        u[key] = None
+    mark_dirty()
     ctx.user_data.pop("awaiting_number", None)
     ctx.user_data.pop("reply_to", None)
     ctx.user_data.pop("conversation_reply_to", None)
     ctx.user_data.pop("compose_confession", None)
-    if profile_complete(u):
-        await update.message.reply_text(TXT_HOME, parse_mode=ParseMode.MARKDOWN, reply_markup=home_markup())
-    elif u.get("identity_mode") not in ("anonymous", "label"):
-        await update.message.reply_text(TXT_WELCOME, parse_mode=ParseMode.MARKDOWN,
-                                        reply_markup=identity_keyboard())
-    else:
-        await continue_setup(ctx.bot, update.effective_user.id, u)
+    await update.message.reply_text(TXT_WELCOME, parse_mode=ParseMode.MARKDOWN,
+                                    reply_markup=identity_keyboard())
 
 
 async def onboarding_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -568,51 +644,7 @@ async def onboarding_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await send_home(ctx.bot, q.from_user.id)
 
 # ---------------------------------------------------------------------------
-# Privacy settings and home menu
-async def send_settings(bot, uid: int) -> None:
-    u = get_user(uid)
-    if not u:
-        await bot.send_message(uid, TXT_NEED_START)
-        return
-    identity_text = "مجهول تمامًا" if u.get("identity_mode") != "label" else "بيانات عامة"
-    replies_text = "مسموح" if u.get("allow_replies") else "مقفول"
-    text = TXT_PRIVACY.format(identity=identity_text, replies=replies_text)
-    markup = kb([
-        [("🔒 مجهول تمامًا", "privacy:anonymous"), ("🏷️ بيانات عامة", "privacy:label")],
-        [("✅ السماح بالردود", "replies:1"), ("🚫 منع الردود", "replies:0")],
-        [("🏠 الرئيسية", "settings:home")],
-    ])
-    await bot.send_message(uid, text, parse_mode=ParseMode.MARKDOWN, reply_markup=markup)
-
-
-async def settings_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    if q.message.chat.type != ChatType.PRIVATE:
-        await q.answer("استخدم الإعدادات في الخاص مع البوت.", show_alert=True)
-        return
-    await q.answer()
-    u = touch_user(q.from_user)
-    kind, _, val = q.data.partition(":")
-    if kind == "privacy":
-        u["identity_mode"] = val
-        mark_dirty()
-        if val == "label" and not (u.get("gender") and u.get("class") and u.get("grp")):
-            await q.edit_message_text("علشان تعرض بيانات عامة، اختار البيانات اللي حابب تظهر. تقدر ترجع للمجهول في أي وقت.")
-            await continue_setup(ctx.bot, q.from_user.id, u)
-            return
-        await q.edit_message_text("✅ تم تحديث إعدادات الخصوصية.")
-        await send_settings(ctx.bot, q.from_user.id)
-    elif kind == "replies":
-        u["allow_replies"] = int(val)
-        mark_dirty()
-        await q.edit_message_text("✅ تم تحديث إعدادات الردود.")
-        await send_settings(ctx.bot, q.from_user.id)
-    elif kind == "settings" and val == "open":
-        await q.edit_message_text("فتحت إعدادات الخصوصية.")
-        await send_settings(ctx.bot, q.from_user.id)
-    elif kind == "settings" and val == "home":
-        await q.edit_message_text("رجعناك للقائمة الرئيسية. استخدم أزرار القائمة تحت.")
-        await send_home(ctx.bot, q.from_user.id)
+# Home menu
 
 # ---------------------------------------------------------------------------
 # Submission safety: suspension, cooldown, flood control, duplicate detection
@@ -715,7 +747,7 @@ async def submit_confession(update: Update, ctx: ContextTypes.DEFAULT_TYPE, u: d
                             plain: str, formatted: str) -> None:
     uid = update.effective_user.id
     if not plain:
-        await update.message.reply_text("ابعت نص الاعتراف الأول، أو /cancel للإلغاء.")
+        await update.message.reply_text("ابعت نص الرسالة الأول، أو /cancel للإلغاء.")
         return
     if len(plain) > MAX_LEN:
         await update.message.reply_text(TXT_TOO_LONG.format(max=MAX_LEN))
@@ -749,7 +781,7 @@ async def submit_confession(update: Update, ctx: ContextTypes.DEFAULT_TYPE, u: d
     except TelegramError:
         # Keep the pending item; an admin is explicitly alerted so it isn't stranded silently.
         log.exception("Could not send confession T%s to moderation group", cid)
-        await update.message.reply_text("⚠️ الاعتراف اتسجل، لكن حصلت مشكلة في إرساله للمراجعة. الإدارة اتبلغت في سجل البوت.")
+        await update.message.reply_text("⚠️ الرسالة اتسجلت، لكن حصلت مشكلة في إرساله للمراجعة. الإدارة اتبلغت في سجل البوت.")
         return
     await update.message.reply_text(TXT_CONFESSION_RECEIVED.format(cid=cid), parse_mode=ParseMode.MARKDOWN)
 
@@ -1003,7 +1035,7 @@ async def show_conversation(ctx: ContextTypes.DEFAULT_TYPE, uid: int, conv_id: i
     messages = messages[-8:]
     conv_status = ("مفتوحة" if conv.get("status") == "active" else
                    "مقفولة" if conv.get("status") == "closed" else "قيد التفعيل")
-    lines = [f"💬 محادثة مجهولة C{conv_id} — اعتراف T{conv['confession_id']}",
+    lines = [f"💬 محادثة مجهولة C{conv_id} — رسالة T{conv['confession_id']}",
              f"الحالة: {conv_status}", ""]
     for m in messages:
         who = "أنت" if m.get("from_user") == uid else "الطرف التاني"
@@ -1033,9 +1065,9 @@ async def send_mytalk(bot, uid: int) -> None:
     convs = [c for c in state["conversations"].values()
              if uid in (c.get("user_a"), c.get("user_b")) and c.get("status") in ("active", "pending", "closed")]
     convs.sort(key=lambda c: c.get("last_activity", c.get("created", 0)), reverse=True)
-    lines = ["💌 MyTalk", "كل اللي ظاهر هنا خاص بيك.", "", "📝 اعترافاتك:"]
+    lines = ["💌 MyTalk", "كل اللي ظاهر هنا خاص بيك.", "", "📝 رسائلك:"]
     if not confs:
-        lines.append("— مفيش اعترافات قيد المراجعة أو منشورة لسه.")
+        lines.append("— مفيش رسائل قيد المراجعة أو منشورة لسه.")
     else:
         for conf in confs[:10]:
             status = "🕓 قيد المراجعة" if conf.get("status") == "pending" else "✅ منشور"
@@ -1059,8 +1091,7 @@ async def send_mytalk(bot, uid: int) -> None:
                     preview += "…"
             lines.append(f"C{conv['id']} · T{conv['confession_id']} · {status}" + (f"\n{preview}" if preview else ""))
     buttons = [[(f"💬 C{c['id']} — T{c['confession_id']}", f"convopen:{c['id']}")] for c in convs[:10]]
-    buttons.append([("🔒 إعدادات الخصوصية", "settings:open")])
-    await bot.send_message(uid, "\n".join(lines), reply_markup=kb(buttons))
+    await bot.send_message(uid, "\n".join(lines), reply_markup=kb(buttons) if buttons else None)
 
 # ---------------------------------------------------------------------------
 # Reporting and moderation tools
@@ -1078,16 +1109,16 @@ def build_report_transcript(conv: dict[str, Any], report: dict[str, Any]) -> str
         f"Report type: {report.get('target_type')}",
         f"Reported target ID: {report.get('target_id')}",
         f"Conversation ID: C{conv_id}",
-        f"Related confession ID: T{conv.get('confession_id')}",
+        f"Related message ID: T{conv.get('confession_id')}",
         f"Participant A Telegram user ID: {uid_a}",
         f"Participant B Telegram user ID: {uid_b}",
         f"Reporter Telegram user ID: {report.get('reporter_id')}",
         f"Reported participant Telegram user ID: {report.get('reported_user_id')}",
         f"Conversation status: {conv.get('status', 'unknown')}",
         "",
-        "RELATED CONFESSION (context)",
+        "RELATED MESSAGE (context)",
         "-" * 52,
-        confession.get("text", "[Confession text unavailable]"),
+        confession.get("text", "[Message text unavailable]"),
         "",
         "FULL CONVERSATION TRANSCRIPT",
         "-" * 52,
@@ -1180,7 +1211,7 @@ async def create_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE, target_t
         detail = (f"<b>بلاغ عن الرسالة M{target_id} في المحادثة C{conversation_id}</b>\n"
                   f"نص الرسالة: {esc(item.get('text', '')[:1000])}")
     else:
-        detail = f"<b>بلاغ عن المحادثة C{conversation_id}</b>\nاعتراف مرتبط: T{conv['confession_id']}"
+        detail = f"<b>بلاغ عن المحادثة C{conversation_id}</b>\nرسالة مرتبطة: T{conv['confession_id']}"
     admin_text = (
         f"🚩 <b>بلاغ جديد RPT{rid}</b>\n"
         f"<i>النوع: {esc(target_type)} • المبلّغ UID <code>{uid}</code> • "
@@ -1285,7 +1316,7 @@ async def admin_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 row["status"] = "pending"
                 row["last_publish_error"] = str(e)[:300]
                 mark_dirty()
-                await q.answer("النشر فشل؛ الاعتراف لسه Pending وتقدر تجرب تاني.", show_alert=True)
+                await q.answer("النشر فشل؛ الرسالة لسه Pending وتقدر تجرب تاني.", show_alert=True)
                 await q.message.reply_text(TXT_CHANNEL_FAIL_WARNING.format(cid=cid))
                 return
             row["status"] = "approved"
@@ -1507,15 +1538,6 @@ async def mytalk_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await send_mytalk(ctx.bot, update.effective_user.id)
 
 
-async def settings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_chat.type != ChatType.PRIVATE:
-        return
-    if not get_user(update.effective_user.id):
-        await update.message.reply_text(TXT_NEED_START)
-        return
-    await send_settings(ctx.bot, update.effective_user.id)
-
-
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat.type == ChatType.PRIVATE:
         await update.message.reply_text(TXT_HELP, parse_mode=ParseMode.MARKDOWN, reply_markup=home_markup())
@@ -1532,7 +1554,7 @@ async def private_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     uid = msg.from_user.id
     u = get_user(uid)
-    plain = msg.text.strip()
+    plain = strip_bidi(msg.text).strip()
 
     # Persistent home-keyboard actions.
     if plain == HOME_WRITE:
@@ -1542,7 +1564,7 @@ async def private_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         ctx.user_data["compose_confession"] = True
         ctx.user_data.pop("reply_to", None)
         ctx.user_data.pop("conversation_reply_to", None)
-        await msg.reply_text("✍️ اكتب اعترافك دلوقتي. تقدر تلغيه بـ /cancel.")
+        await msg.reply_text("✍️ اكتب رسالتك دلوقتي. تقدر تلغيه بـ /cancel.")
         return
     if plain == HOME_MYTALK:
         if not profile_complete(u):
@@ -1550,8 +1572,8 @@ async def private_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             return
         await send_mytalk(ctx.bot, uid)
         return
-    if plain == HOME_PRIVACY:
-        await send_settings(ctx.bot, uid)
+    if plain == HOME_REPLY:
+        await reply_cmd(update, ctx)   # same flow as /reply: asks for the number, then the reply
         return
     if plain == HOME_HELP:
         await msg.reply_text(TXT_HELP, parse_mode=ParseMode.MARKDOWN, reply_markup=home_markup())
@@ -1561,7 +1583,7 @@ async def private_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await msg.reply_text(TXT_NEED_START)
         return
     touch_user(msg.from_user)
-    formatted = msg.text_html.strip()
+    formatted = strip_bidi(msg.text_html).strip()
 
     if ctx.user_data.get("awaiting_number"):
         m = NUMBER_RE.match(plain)
@@ -1601,11 +1623,10 @@ async def private_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # Main
 
 def main() -> None:
-    app = (Application.builder().token(BOT_TOKEN).post_init(on_start).post_stop(on_stop).build())
+    app = (Application.builder().bot(RTLBot(token=BOT_TOKEN)).post_init(on_start).post_stop(on_stop).build())
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reply", reply_cmd))
     app.add_handler(CommandHandler("mytalk", mytalk_cmd))
-    app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("chatid", chat_id_cmd))
@@ -1614,7 +1635,6 @@ def main() -> None:
     app.add_handler(CommandHandler("ban", ban_cmd))
     app.add_handler(CommandHandler("unban", unban_cmd))
     app.add_handler(CallbackQueryHandler(onboarding_cb, pattern=r"^(im|g|c|grp|pr):"))
-    app.add_handler(CallbackQueryHandler(settings_cb, pattern=r"^(privacy|replies|settings):"))
     app.add_handler(CallbackQueryHandler(conversation_cb, pattern=r"^(convreply|convopen|closeconv):"))
     app.add_handler(CallbackQueryHandler(user_report_cb, pattern=r"^(reportmsg|reportconv):"))
     app.add_handler(CallbackQueryHandler(admin_cb, pattern=r"^(ac|rc|ar|rr|cm|xm|rclose|sus):"))
